@@ -8,42 +8,138 @@ namespace amazon.seller.crawler
 {
     class Program
     {
-        static void Main(string[] args)
+        // Amazon Seller Url
+        static string URL_AMAZON = "https://www.amazon.de/sp?seller=";
+        static string URL_SELLERRATINGS_BASE = "https://www.sellerratings.com/amazon/germany";
+        static string URL_SELLERRATINGS_INTERNAL = null;
+        static AmazonSeller SELLER = new AmazonSeller();
+
+        /// <summary>
+        /// Analyse der Kommandozeilen Argumente
+        /// </summary>
+        /// <param name="args">Das Args Array</param>
+        private static void evalArgs(ref string[] args)
         {
-            AmazonSeller seller = new AmazonSeller();
-            string url = "https://www.amazon.de/sp?seller=";
-            int counter = 0;
-
-            foreach (var a in args)
+            try
             {
-                if (a.ToUpper().Trim() == "--AMAZON-SELLER")
+                bool skipnext = false;
+                int counter = 0;
+                foreach (var a in args)
                 {
-                    try
+                    // Dieses Argument nicht auswerten
+                    // War ein Paramter des letyten Arguments
+                    if (skipnext)
                     {
-                        var id = args[counter + 1];
-                        url += id;
-                        seller.ID = id;
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Console.WriteLine(ex);
+                        skipnext = false;
+                        continue;
                     }
 
+                    switch (a.Trim().ToUpper())
+                    {
+                        case "-AI":
+                        case "--AMAZON-ID":
+                            skipnext = true;
+                            SELLER.ID = args[counter + 1];
+                            URL_AMAZON += SELLER.ID;
+                            break;
+
+                        case "-AN":
+                        case "--AMAZON-NAME":
+                            SELLER.Name = args[counter + 1];
+                            URL_SELLERRATINGS_INTERNAL = $"?name={SELLER.Name}";
+                            skipnext = true;
+                            break;
+
+                        case "-H":
+                        case "--HELP":
+                        default:
+                            Console.WriteLine("Usage: amazon.seller.crawler [options]");
+                            Console.WriteLine("\twhere [options]");
+                            Console.WriteLine("\t-h | --help \t this screen");
+                            Console.WriteLine();
+                            Console.WriteLine($"{a}: Unknown Argument");
+                            Environment.Exit(1);
+                            break;
+                    }
+                    counter++;
                 }
-                counter++;
             }
-
-            if (seller.ID == null || seller.ID == string.Empty)
+            catch (System.Exception ex)
             {
-                Console.WriteLine("No Amazon ID Found. Exiting...");
-                Environment.Exit(0);
+                Console.WriteLine("Fehler beim Auswerten der Kommandozeilen Argumente");
+                Console.WriteLine(ex.Message);
+            }
+        }
+
+        private static void getFromSellerRatings()
+        {
+            HtmlDocument htmlDoc = null;
+            var code = getHtmlDoc($"{URL_SELLERRATINGS_BASE}{URL_SELLERRATINGS_INTERNAL}", ref htmlDoc);
+
+            // Auf Status != 200 zu prüfen ist sinnlos, die Antwort ist immer 200 nur ohne
+            // Inhalt auf der Seite
+
+            var xpathInternalLink = @"//table[@id='report']/tbody/tr[1]/td[2]/a";
+            var nameNode = htmlDoc.DocumentNode.SelectSingleNode(xpathInternalLink);
+
+            if (nameNode != null)
+            {
+                URL_SELLERRATINGS_INTERNAL = nameNode.OuterHtml;
+                URL_SELLERRATINGS_INTERNAL = URL_SELLERRATINGS_INTERNAL.Split('"')[1];
+                URL_SELLERRATINGS_INTERNAL = URL_SELLERRATINGS_INTERNAL.Split('/')[3];
+
+                code = getHtmlDoc($"{URL_SELLERRATINGS_BASE}/{URL_SELLERRATINGS_INTERNAL}", ref htmlDoc);
+
+                if (code == System.Net.HttpStatusCode.OK)
+                {
+                    var xpathAmazonID = @"//div[@class='contact']/a";
+                    var contNode = htmlDoc.DocumentNode.SelectSingleNode(xpathAmazonID);
+
+                    if (contNode != null)
+                    {
+                        //Console.WriteLine(contNode.OuterHtml);
+                        var href = contNode.OuterHtml;
+                        var link = href.Split(' ')[1];
+                        link = link.Trim('"');
+                        var id = link.Split('=')[2];
+                        SELLER.ID = id;
+                        URL_AMAZON += SELLER.ID;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"Error fetching Data from {URL_SELLERRATINGS_BASE}/{URL_SELLERRATINGS_INTERNAL}");
+                }
+
+            }
+            else
+            {
+                Console.WriteLine($"No Seller with Name {SELLER.Name} found!");
             }
 
-            Console.WriteLine(url);
+        }
 
-            HtmlWeb web = new HtmlWeb();
-            var htmlDoc = web.Load(url);
-            var code = web.StatusCode;
+        private static System.Net.HttpStatusCode getHtmlDoc(string url, ref HtmlDocument html)
+        {
+            try
+            {
+                Console.WriteLine(url);
+                HtmlWeb web = new HtmlWeb();
+                html = web.Load(url);
+                return web.StatusCode;
+            }
+            catch (System.Exception ex)
+            {
+                Console.WriteLine($"Error fetching Data from: {url}");
+                Console.WriteLine(ex.Message);
+                return System.Net.HttpStatusCode.NotFound;
+            }
+        }
+
+        private static void getFromAmazon()
+        {
+            HtmlDocument htmlDoc = null;
+            var code = getHtmlDoc(URL_AMAZON, ref htmlDoc);
 
             if (code != System.Net.HttpStatusCode.OK)
             {
@@ -62,68 +158,107 @@ namespace amazon.seller.crawler
                 var nameNode = htmlDoc.DocumentNode.SelectSingleNode(xpathSellerName);
                 if (nameNode != null)
                 {
-                    seller.Name = nameNode.InnerHtml;
+                    SELLER.Name = nameNode.InnerHtml;
                 }
-
-                var node30 = htmlDoc.DocumentNode.SelectSingleNode(xpath30);
-                if (node30 != null)
-                {
-                    seller.Rating30DaysPercentage = Double.Parse(node30.InnerHtml);
-                }
-
-                var node90 = htmlDoc.DocumentNode.SelectSingleNode(xpath90);
-                if (node90 != null)
-                {
-                    seller.Rating90DaysPercentage = Double.Parse(node90.InnerHtml);
-                }
-
-                var node12 = htmlDoc.DocumentNode.SelectSingleNode(xpath12);
-                if (node12 != null)
-                {
-                    seller.Rating12MonthPercentage = Double.Parse(node12.InnerHtml);
-                }
-
-                var nodeTotal = htmlDoc.DocumentNode.SelectSingleNode(xpathTotal);
-                if (nodeTotal != null)
-                {
-                    seller.RatingTotalPercentage = Double.Parse(nodeTotal.InnerHtml);
-                }
-
-                Console.WriteLine();
-                Console.WriteLine($"AMAZON.DE SELLER: {seller.Name}");
-                Console.WriteLine($"AMAZON.DE ID: {seller.ID}");
-                Console.WriteLine($"30 DAY: {seller.Rating30DaysPercentage} % | {seller.Rating30DaysStars} {seller.Rating30DaysStarsSymbol}");
-                Console.WriteLine($"90 DAY: {seller.Rating90DaysPercentage} % | {seller.Rating90DaysStars} {seller.Rating90DaysStarsSymbol}");
-                Console.WriteLine($"12 MONTH: {seller.Rating12MonthPercentage} % | {seller.Rating12MonthStars} {seller.Rating12MonthStarsSymbol}");
-                Console.WriteLine($"TOTAL: {seller.RatingTotalPercentage} % | {seller.RatingTotalStars} {seller.RatingTotalStarsSymbol}");
             }
             catch (System.Exception ex)
             {
-                Console.WriteLine();
-                Console.WriteLine("Something went terribly wrong...");
-                Console.WriteLine(ex.InnerException);
-                throw;
+                Console.WriteLine($"SELLER.NAME -- {ex.Message}");
+                SELLER.Name = "ERROR";
             }
 
-
-
-            /*HttpClient client = new HttpClient();
-
-
-            using (var response = await client.GetAsync(url))
+            try
             {
-
-                using (var content = response.Content)
+                var node30 = htmlDoc.DocumentNode.SelectSingleNode(xpath30);
+                if (node30 != null)
                 {
-                    var result = await content.ReadAsStringAsync();
-                    var document = new HtmlDocument();
-                    document.LoadHtml(result);
-                    var nodes = document.DocumentNode.SelectNodes("html");
-
-                    var i = nodes.Count;
+                    SELLER.Rating30DaysPercentage = Double.Parse(node30.InnerHtml);
                 }
 
-            } */
+            }
+            catch (System.Exception ex)
+            {
+                Console.WriteLine($"SELLER.Rating30DaysPercentage -- {ex.Message}");
+                SELLER.Rating30DaysPercentage = 0.0;
+            }
+
+            try
+            {
+                var node90 = htmlDoc.DocumentNode.SelectSingleNode(xpath90);
+                if (node90 != null)
+                {
+                    SELLER.Rating90DaysPercentage = Double.Parse(node90.InnerHtml);
+                }
+
+            }
+            catch (System.Exception ex)
+            {
+                Console.WriteLine($"SELLER.Rating90DaysPercentage -- {ex.Message}");
+                SELLER.Rating90DaysPercentage = 0.0;
+            }
+
+            try
+            {
+                var node12 = htmlDoc.DocumentNode.SelectSingleNode(xpath12);
+                if (node12 != null)
+                {
+                    SELLER.Rating12MonthPercentage = Double.Parse(node12.InnerHtml);
+                }
+
+            }
+            catch (System.Exception ex)
+            {
+                Console.WriteLine($"SELLER.Rating12MonthPercentage -- {ex.Message}");
+                SELLER.Rating12MonthPercentage = 0.0;
+            }
+
+            try
+            {
+                var nodeTotal = htmlDoc.DocumentNode.SelectSingleNode(xpathTotal);
+                if (nodeTotal != null)
+                {
+                    SELLER.RatingTotalPercentage = Double.Parse(nodeTotal.InnerHtml);
+                }
+
+            }
+            catch (System.Exception ex)
+            {
+                Console.WriteLine($"SELLER.RatingTotalPercentage -- {ex.Message}");
+                SELLER.RatingTotalPercentage = 0.0;
+            }
+
+            Console.WriteLine();
+            Console.WriteLine($"AMAZON.DE SELLER: {SELLER.Name}");
+            Console.WriteLine($"AMAZON.DE ID: {SELLER.ID}");
+            Console.WriteLine($"30 DAY: {SELLER.Rating30DaysPercentage} % | {SELLER.Rating30DaysStars} {SELLER.Rating30DaysStarsSymbol}");
+            Console.WriteLine($"90 DAY: {SELLER.Rating90DaysPercentage} % | {SELLER.Rating90DaysStars} {SELLER.Rating90DaysStarsSymbol}");
+            Console.WriteLine($"12 MONTH: {SELLER.Rating12MonthPercentage} % | {SELLER.Rating12MonthStars} {SELLER.Rating12MonthStarsSymbol}");
+            Console.WriteLine($"TOTAL: {SELLER.RatingTotalPercentage} % | {SELLER.RatingTotalStars} {SELLER.RatingTotalStarsSymbol}");
+        }
+
+        /// <summary>
+        /// Main Entry
+        /// </summary>
+        /// <param name="args"></param>
+        static void Main(string[] args)
+        {
+            // Kommandozeilenargumente auswerten
+            evalArgs(ref args);
+
+            if (SELLER.ID != null)
+            {
+                getFromAmazon();
+            }
+            else if (SELLER.Name != null)
+            {
+                getFromSellerRatings();
+                getFromAmazon();
+            }
+            else
+            {
+                Console.WriteLine("Nothing to check");
+            }
+            //Environment.Exit(0);           
         }
     }
 }
