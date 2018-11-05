@@ -62,12 +62,11 @@ namespace amazon.seller.crawler
                             skipnext = true;
                             break;
 
-                        case "-H":
-                        case "--HELP":
+                        case "--HELP-ME":
                         default:
                             Console.WriteLine("Usage: amazon.seller.crawler [options]");
                             Console.WriteLine("\twhere [options]");
-                            Console.WriteLine("\t--help | -h\t\t\t\t\tDiese Anzeige");
+                            Console.WriteLine("\t--help-me\t\t\t\t\tDiese Anzeige");
                             Console.WriteLine("\t--amazon-id | -ai <AMAZON-SELLER-ID>\t\tAmazon Verkaeufer ID");
                             Console.WriteLine("\t--amazon-name | -an <AMAZON-SELLER-NAME>\tAmazon Verkaeufer Name");
                             Console.WriteLine("\t--proxy <IP_ADDRESS:PORT>\t\t\tProxy der benutzt werden soll");
