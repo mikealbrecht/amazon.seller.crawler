@@ -12,6 +12,9 @@ namespace amazon.seller.crawler
         static string URL_AMAZON = "https://www.amazon.de/sp?seller=";
         static string URL_SELLERRATINGS_BASE = "https://www.sellerratings.com/amazon/germany";
         static string URL_SELLERRATINGS_INTERNAL = null;
+        static string PROXY_URL = null;
+        static int PROXY_PORT;
+        static bool PROXY_USE = false;
         static AmazonSeller SELLER = new AmazonSeller();
 
         /// <summary>
@@ -31,6 +34,7 @@ namespace amazon.seller.crawler
                     if (skipnext)
                     {
                         skipnext = false;
+                        counter++;
                         continue;
                     }
 
@@ -50,12 +54,23 @@ namespace amazon.seller.crawler
                             skipnext = true;
                             break;
 
+                        case "--PROXY":
+                            PROXY_USE = true;
+                            var _proxy = args[counter + 1];
+                            PROXY_URL = _proxy.Split(':')[0];
+                            PROXY_PORT = Int16.Parse(_proxy.Split(':')[1]);
+                            skipnext = true;
+                            break;
+
                         case "-H":
                         case "--HELP":
                         default:
                             Console.WriteLine("Usage: amazon.seller.crawler [options]");
                             Console.WriteLine("\twhere [options]");
-                            Console.WriteLine("\t-h | --help \t this screen");
+                            Console.WriteLine("\t--help | -h\t\t\t\t\tDiese Anzeige");
+                            Console.WriteLine("\t--amazon-id | -ai <AMAZON-SELLER-ID>\t\tAmazon Verkaeufer ID");
+                            Console.WriteLine("\t--amazon-name | -an <AMAZON-SELLER-NAME>\tAmazon Verkaeufer Name");
+                            Console.WriteLine("\t--proxy <IP_ADDRESS:PORT>\t\t\tProxy der benutzt werden soll");
                             Console.WriteLine();
                             Console.WriteLine($"{a}: Unknown Argument");
                             Environment.Exit(1);
@@ -68,6 +83,7 @@ namespace amazon.seller.crawler
             {
                 Console.WriteLine("Fehler beim Auswerten der Kommandozeilen Argumente");
                 Console.WriteLine(ex.Message);
+                Environment.Exit(1);
             }
         }
 
@@ -125,7 +141,15 @@ namespace amazon.seller.crawler
             {
                 Console.WriteLine(url);
                 HtmlWeb web = new HtmlWeb();
-                html = web.Load(url);
+                if (PROXY_USE)
+                {
+                    Console.WriteLine($"Using Proxy: {PROXY_URL}:{PROXY_PORT}");
+                    html = web.Load(url, PROXY_URL, PROXY_PORT, null, null);
+                }
+                else
+                {
+                    html = web.Load(url);
+                }
                 return web.StatusCode;
             }
             catch (System.Exception ex)
